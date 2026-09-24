@@ -1,0 +1,12 @@
+# Spec-driven docs stay local. They are not part of the technical-test repo.
+sdd/
+.cursor/
+AGENTS.md
+
+# Evaluator ground truth. Never available to the model or the end user.
+data/expected_results.csv
+**/expected_results.csv
+
+.env
+*.exe
+/server
