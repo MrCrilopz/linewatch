@@ -99,6 +99,125 @@ func (db *DB) Reason(analysisID, meterID string) (string, error) {
 	return reason, err
 }
 
+func (db *DB) Summary() (domain.Summary, error) {
+	var sum domain.Summary
+	sum.AnalysisStatus = "none"
+	if err := db.sql.QueryRow(`SELECT COUNT(*) FROM meters`).Scan(&sum.MeterCount); err != nil {
+		return domain.Summary{}, err
+	}
+	if err := db.sql.QueryRow(`SELECT COALESCE(SUM(consumption_kwh), 0) FROM readings`).Scan(&sum.PeriodConsumptionKWh); err != nil {
+		return domain.Summary{}, err
+	}
+	row, err := db.latestAnalysis()
+	if errors.Is(err, domain.ErrNotFound) {
+		return sum, nil
+	}
+	if err != nil {
+		return domain.Summary{}, err
+	}
+	sum.AnalysisStatus = row.Status
+	sum.AnomalyCount = row.AnomalyCount
+	sum.HighPriorityCount = row.HighPriorityCount
+	when := row.StartedAt
+	if row.FinishedAt != nil {
+		when = *row.FinishedAt
+	}
+	sum.LastAnalysisAt = &when
+	if row.Status == "success" {
+		if err := db.sql.QueryRow(`SELECT COALESCE(AVG(confidence), 0) FROM anomalies WHERE analysis_id = ?`, row.ID).Scan(&sum.Confidence); err != nil {
+			return domain.Summary{}, err
+		}
+	}
+	return sum, nil
+}
+
+func (db *DB) Anomalies() ([]domain.AnomalyView, error) {
+	row, err := db.latestAnalysis()
+	if errors.Is(err, domain.ErrNotFound) || (err == nil && row.Status != "success") {
+		return []domain.AnomalyView{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	rows, err := db.sql.Query(`
+		SELECT id, meter_id, type, severity, confidence, reason, recommended_action
+		FROM anomalies WHERE analysis_id = ? ORDER BY position
+	`, row.ID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []domain.AnomalyView
+	for rows.Next() {
+		var item domain.AnomalyView
+		var id int64
+		if err := rows.Scan(&id, &item.MeterID, &item.Type, &item.Severity, &item.Confidence, &item.Reason, &item.RecommendedAction); err != nil {
+			return nil, err
+		}
+		item.ID = strconv.FormatInt(id, 10)
+		item.Anomaly = true
+		out = append(out, item)
+	}
+	if out == nil {
+		out = []domain.AnomalyView{}
+	}
+	return out, rows.Err()
+}
+
+func (db *DB) Anomaly(id string) (domain.AnomalyView, error) {
+	n, err := strconv.ParseInt(id, 10, 64)
+	if err != nil || n <= 0 {
+		return domain.AnomalyView{}, domain.ErrNotFound
+	}
+	var item domain.AnomalyView
+	err = db.sql.QueryRow(`
+		SELECT id, meter_id, type, severity, confidence, reason, recommended_action
+		FROM anomalies WHERE id = ?
+	`, n).Scan(&n, &item.MeterID, &item.Type, &item.Severity, &item.Confidence, &item.Reason, &item.RecommendedAction)
+	if errors.Is(err, sql.ErrNoRows) {
+		return domain.AnomalyView{}, domain.ErrNotFound
+	}
+	if err != nil {
+		return domain.AnomalyView{}, err
+	}
+	item.ID = strconv.FormatInt(n, 10)
+	item.Anomaly = true
+	readings, err := db.Readings(item.MeterID)
+	if err != nil {
+		return domain.AnomalyView{}, err
+	}
+	events, err := db.Events(item.MeterID)
+	if err != nil {
+		return domain.AnomalyView{}, err
+	}
+	class, ok := domain.Classify(readings, events)
+	if ok {
+		ev := domain.EvidenceFor(readings, events, class)
+		item.BaselineKWh = ev.BaselineKWh
+		item.ActualKWh = ev.ActualKWh
+		item.VariationPct = ev.VariationPct
+		item.EventType = ev.EventType
+		item.EventDescription = ev.EventDescription
+		item.VoltageV = ev.VoltageV
+		item.CurrentA = ev.CurrentA
+		item.PowerFactor = ev.PowerFactor
+		item.Signals = ev.Signals
+	}
+	return item, nil
+}
+
+func (db *DB) latestAnalysis() (domain.Analysis, error) {
+	var rowID int64
+	err := db.sql.QueryRow(`SELECT id FROM analysis ORDER BY id DESC LIMIT 1`).Scan(&rowID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return domain.Analysis{}, domain.ErrNotFound
+	}
+	if err != nil {
+		return domain.Analysis{}, err
+	}
+	return db.Analysis(strconv.FormatInt(rowID, 10))
+}
+
 func (db *DB) AnomalyMeters(analysisID string) ([]string, error) {
 	n, err := strconv.ParseInt(analysisID, 10, 64)
 	if err != nil {

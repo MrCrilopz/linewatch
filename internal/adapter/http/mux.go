@@ -18,6 +18,9 @@ type Store interface {
 	Meters() ([]domain.Meter, error)
 	Meter(id string) (domain.Meter, error)
 	Readings(id string) ([]domain.Reading, error)
+	Summary() (domain.Summary, error)
+	Anomalies() ([]domain.AnomalyView, error)
+	Anomaly(id string) (domain.AnomalyView, error)
 }
 
 func NewMux(store Store, runner *app.Runner) *http.ServeMux {
@@ -28,6 +31,15 @@ func NewMux(store Store, runner *app.Runner) *http.ServeMux {
 	})
 	mux.HandleFunc("GET /ai/analysis/{id}", func(w http.ResponseWriter, r *http.Request) {
 		showAnalysis(runner, w, r)
+	})
+	mux.HandleFunc("GET /dashboard/summary", func(w http.ResponseWriter, r *http.Request) {
+		dashboard(store, w)
+	})
+	mux.HandleFunc("GET /anomalies", func(w http.ResponseWriter, r *http.Request) {
+		listAnomalies(store, w)
+	})
+	mux.HandleFunc("GET /anomalies/{id}", func(w http.ResponseWriter, r *http.Request) {
+		anomaly(store, w, r)
 	})
 	mux.HandleFunc("GET /meters", func(w http.ResponseWriter, r *http.Request) {
 		listMeters(store, w, r)
@@ -78,6 +90,54 @@ func showAnalysis(runner *app.Runner, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, row)
+}
+
+func dashboard(store Store, w http.ResponseWriter) {
+	if store == nil {
+		writeError(w, http.StatusInternalServerError, "store")
+		return
+	}
+	sum, err := store.Summary()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "store")
+		return
+	}
+	writeJSON(w, http.StatusOK, sum)
+}
+
+func listAnomalies(store Store, w http.ResponseWriter) {
+	if store == nil {
+		writeError(w, http.StatusInternalServerError, "store")
+		return
+	}
+	items, err := store.Anomalies()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "store")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"anomalies": items})
+}
+
+func anomaly(store Store, w http.ResponseWriter, r *http.Request) {
+	if store == nil {
+		writeError(w, http.StatusInternalServerError, "store")
+		return
+	}
+	id := r.PathValue("id")
+	if !regexp.MustCompile(`^[0-9]+$`).MatchString(id) {
+		writeError(w, http.StatusBadRequest, "invalid anomaly id")
+		return
+	}
+	item, err := store.Anomaly(id)
+	if errors.Is(err, domain.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "store")
+		return
+	}
+	writeJSON(w, http.StatusOK, item)
 }
 
 func health(w http.ResponseWriter, _ *http.Request) {

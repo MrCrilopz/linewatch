@@ -37,6 +37,18 @@ func TestAnalysisOrderAndStates(t *testing.T) {
 	held := holdStore{DB: db, hold: make(chan struct{})}
 	mux := NewMux(db, app.NewRunner(held, nil))
 
+	before := get(mux, "/dashboard/summary")
+	if before.Code != http.StatusOK {
+		t.Fatalf("summary before %d", before.Code)
+	}
+	var empty domain.Summary
+	if err := json.Unmarshal(before.Body.Bytes(), &empty); err != nil {
+		t.Fatal(err)
+	}
+	if empty.AnalysisStatus != "none" || empty.AnomalyCount != 0 || empty.MeterCount != 12 {
+		t.Fatalf("before %+v", empty)
+	}
+
 	post := postJSON(mux, "/ai/analyze")
 	if post.Code != http.StatusOK {
 		t.Fatalf("start %d %s", post.Code, post.Body.String())
@@ -95,6 +107,38 @@ func TestAnalysisOrderAndStates(t *testing.T) {
 	}
 	if get(mux, "/ai/analysis/999").Code != http.StatusNotFound {
 		t.Fatal("missing")
+	}
+	sumRec := get(mux, "/dashboard/summary")
+	var sum domain.Summary
+	if err := json.Unmarshal(sumRec.Body.Bytes(), &sum); err != nil {
+		t.Fatal(err)
+	}
+	if sum.AnalysisStatus != "success" || sum.AnomalyCount != 4 || sum.HighPriorityCount != 2 || sum.MeterCount != 12 || sum.Confidence <= 0 || sum.PeriodConsumptionKWh <= 0 {
+		t.Fatalf("summary %+v", sum)
+	}
+	listRec := get(mux, "/anomalies")
+	var list struct {
+		Anomalies []domain.AnomalyView `json:"anomalies"`
+	}
+	if err := json.Unmarshal(listRec.Body.Bytes(), &list); err != nil {
+		t.Fatal(err)
+	}
+	if len(list.Anomalies) != 4 || list.Anomalies[0].MeterID != "M-109" || list.Anomalies[0].Type != "REAL_ANOMALY" {
+		t.Fatalf("anomalies %+v", list.Anomalies)
+	}
+	detail := get(mux, "/anomalies/"+list.Anomalies[0].ID)
+	if detail.Code != http.StatusOK {
+		t.Fatalf("detail %d %s", detail.Code, detail.Body.String())
+	}
+	var one domain.AnomalyView
+	if err := json.Unmarshal(detail.Body.Bytes(), &one); err != nil {
+		t.Fatal(err)
+	}
+	if one.BaselineKWh <= 0 || one.RecommendedAction == "" {
+		t.Fatalf("detail %+v", one)
+	}
+	if get(mux, "/anomalies/999").Code != http.StatusNotFound {
+		t.Fatal("missing anomaly")
 	}
 }
 

@@ -21,6 +21,36 @@ type Anomaly struct {
 	Action  string
 }
 
+type AnomalyView struct {
+	ID                string   `json:"id"`
+	MeterID           string   `json:"meter_id"`
+	Anomaly           bool     `json:"anomaly"`
+	Type              string   `json:"type"`
+	Severity          string   `json:"severity"`
+	Confidence        float64  `json:"confidence"`
+	Reason            string   `json:"reason"`
+	RecommendedAction string   `json:"recommended_action"`
+	BaselineKWh       float64  `json:"baseline_kwh,omitempty"`
+	ActualKWh         float64  `json:"actual_kwh,omitempty"`
+	VariationPct      float64  `json:"variation_pct,omitempty"`
+	EventType         string   `json:"event_type,omitempty"`
+	EventDescription  string   `json:"event_description,omitempty"`
+	VoltageV          float64  `json:"voltage_v,omitempty"`
+	CurrentA          float64  `json:"current_a,omitempty"`
+	PowerFactor       float64  `json:"power_factor,omitempty"`
+	Signals           []string `json:"signals,omitempty"`
+}
+
+type Summary struct {
+	MeterCount           int        `json:"meter_count"`
+	PeriodConsumptionKWh float64    `json:"period_consumption_kwh"`
+	AnomalyCount         int        `json:"anomaly_count"`
+	HighPriorityCount    int        `json:"high_priority_count"`
+	Confidence           float64    `json:"confidence"`
+	AnalysisStatus       string     `json:"analysis_status"`
+	LastAnalysisAt       *time.Time `json:"last_analysis_at,omitempty"`
+}
+
 type Evidence struct {
 	MeterID          string
 	Type             string
