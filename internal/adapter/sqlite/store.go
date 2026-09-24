@@ -3,6 +3,7 @@ package sqlite
 import (
 	"database/sql"
 	"encoding/csv"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -107,6 +108,80 @@ func (db *DB) Load(readingsPath, eventsPath string) error {
 		}
 	}
 	return tx.Commit()
+}
+
+func (db *DB) Meters() ([]domain.Meter, error) {
+	rows, err := db.sql.Query(`
+		SELECT m.meter_id, COALESCE(SUM(r.consumption_kwh), 0)
+		FROM meters m
+		LEFT JOIN readings r ON r.meter_id = m.meter_id
+		GROUP BY m.meter_id
+		ORDER BY m.meter_id
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []domain.Meter
+	for rows.Next() {
+		var m domain.Meter
+		if err := rows.Scan(&m.ID, &m.ConsumptionKWh); err != nil {
+			return nil, err
+		}
+		m.Status = "ok"
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
+func (db *DB) Meter(id string) (domain.Meter, error) {
+	var m domain.Meter
+	err := db.sql.QueryRow(`
+		SELECT m.meter_id, COALESCE(SUM(r.consumption_kwh), 0)
+		FROM meters m
+		LEFT JOIN readings r ON r.meter_id = m.meter_id
+		WHERE m.meter_id = ?
+		GROUP BY m.meter_id
+	`, id).Scan(&m.ID, &m.ConsumptionKWh)
+	if errors.Is(err, sql.ErrNoRows) {
+		return domain.Meter{}, domain.ErrNotFound
+	}
+	if err != nil {
+		return domain.Meter{}, err
+	}
+	m.Status = "ok"
+	return m, nil
+}
+
+func (db *DB) Readings(id string) ([]domain.Reading, error) {
+	if _, err := db.Meter(id); err != nil {
+		return nil, err
+	}
+	rows, err := db.sql.Query(`
+		SELECT timestamp, consumption_kwh, voltage_v, current_a, power_factor, status
+		FROM readings
+		WHERE meter_id = ?
+		ORDER BY timestamp
+	`, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []domain.Reading
+	for rows.Next() {
+		var raw string
+		var rec domain.Reading
+		if err := rows.Scan(&raw, &rec.ConsumptionKWh, &rec.VoltageV, &rec.CurrentA, &rec.PowerFactor, &rec.Status); err != nil {
+			return nil, err
+		}
+		rec.Timestamp, err = parseTime(raw)
+		if err != nil {
+			return nil, err
+		}
+		rec.MeterID = id
+		out = append(out, rec)
+	}
+	return out, rows.Err()
 }
 
 func (db *DB) Counts() (meters, readings, events int, err error) {

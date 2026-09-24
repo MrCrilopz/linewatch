@@ -24,5 +24,5 @@ func main() {
 	log.Printf("loaded meters=%d readings=%d", meters, readings)
 	addr := ":8080"
 	log.Printf("listening on %s", addr)
-	log.Fatal(http.ListenAndServe(addr, httpadapter.NewMux()))
+	log.Fatal(http.ListenAndServe(addr, httpadapter.NewMux(db)))
 }

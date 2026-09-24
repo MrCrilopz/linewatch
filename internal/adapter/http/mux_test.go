@@ -10,7 +10,7 @@ import (
 func TestHealth(t *testing.T) {
 	req := httptest.NewRequest(stdhttp.MethodGet, "/health", nil)
 	rec := httptest.NewRecorder()
-	NewMux().ServeHTTP(rec, req)
+	NewMux(nil).ServeHTTP(rec, req)
 
 	if rec.Code != stdhttp.StatusOK {
 		t.Fatalf("status %d", rec.Code)
