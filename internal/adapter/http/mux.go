@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"linewatch/internal/app"
 	"linewatch/internal/domain"
 )
 
@@ -19,9 +20,15 @@ type Store interface {
 	Readings(id string) ([]domain.Reading, error)
 }
 
-func NewMux(store Store) *http.ServeMux {
+func NewMux(store Store, runner *app.Runner) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", health)
+	mux.HandleFunc("POST /ai/analyze", func(w http.ResponseWriter, r *http.Request) {
+		startAnalysis(runner, w, r)
+	})
+	mux.HandleFunc("GET /ai/analysis/{id}", func(w http.ResponseWriter, r *http.Request) {
+		showAnalysis(runner, w, r)
+	})
 	mux.HandleFunc("GET /meters", func(w http.ResponseWriter, r *http.Request) {
 		listMeters(store, w, r)
 	})
@@ -32,6 +39,45 @@ func NewMux(store Store) *http.ServeMux {
 		meter(store, w, r)
 	})
 	return mux
+}
+
+func startAnalysis(runner *app.Runner, w http.ResponseWriter, _ *http.Request) {
+	if runner == nil {
+		writeError(w, http.StatusInternalServerError, "analysis")
+		return
+	}
+	row, err := runner.Start()
+	if errors.Is(err, app.ErrBusy) {
+		writeError(w, http.StatusConflict, "analysis running")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "analysis")
+		return
+	}
+	writeJSON(w, http.StatusOK, row)
+}
+
+func showAnalysis(runner *app.Runner, w http.ResponseWriter, r *http.Request) {
+	if runner == nil {
+		writeError(w, http.StatusInternalServerError, "analysis")
+		return
+	}
+	id := r.PathValue("id")
+	if !regexp.MustCompile(`^[0-9]+$`).MatchString(id) {
+		writeError(w, http.StatusBadRequest, "invalid analysis id")
+		return
+	}
+	row, err := runner.Store.Analysis(id)
+	if errors.Is(err, domain.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "analysis")
+		return
+	}
+	writeJSON(w, http.StatusOK, row)
 }
 
 func health(w http.ResponseWriter, _ *http.Request) {

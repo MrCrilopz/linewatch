@@ -50,7 +50,31 @@ func Open(path string) (*DB, error) {
 			event_type TEXT NOT NULL,
 			description TEXT NOT NULL
 		);
+		CREATE TABLE IF NOT EXISTS analysis (
+			id INTEGER PRIMARY KEY,
+			started_at TEXT NOT NULL,
+			finished_at TEXT,
+			status TEXT NOT NULL,
+			anomaly_count INTEGER NOT NULL DEFAULT 0,
+			high_priority_count INTEGER NOT NULL DEFAULT 0
+		);
+		CREATE TABLE IF NOT EXISTS anomalies (
+			id INTEGER PRIMARY KEY,
+			analysis_id INTEGER NOT NULL REFERENCES analysis(id),
+			meter_id TEXT NOT NULL,
+			type TEXT NOT NULL,
+			severity TEXT NOT NULL,
+			confidence REAL NOT NULL,
+			excess REAL NOT NULL,
+			reason TEXT NOT NULL,
+			recommended_action TEXT NOT NULL,
+			position INTEGER NOT NULL
+		);
 	`); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if _, err := db.Exec(`UPDATE analysis SET status = 'error', finished_at = started_at WHERE status = 'running'`); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -143,7 +167,7 @@ func (db *DB) Meter(id string) (domain.Meter, error) {
 	if err != nil {
 		return domain.Meter{}, err
 	}
-	events, err := db.events(id)
+	events, err := db.Events(id)
 	if err != nil {
 		return domain.Meter{}, err
 	}
@@ -179,7 +203,7 @@ func (db *DB) consumption(id string) ([]domain.Reading, error) {
 	return out, rows.Err()
 }
 
-func (db *DB) events(id string) ([]domain.Event, error) {
+func (db *DB) Events(id string) ([]domain.Event, error) {
 	rows, err := db.sql.Query(`SELECT event_timestamp, event_type, description FROM events WHERE meter_id = ?`, id)
 	if err != nil {
 		return nil, err

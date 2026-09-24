@@ -21,7 +21,7 @@ func TestMeterFilterAndMissing(t *testing.T) {
 	if err := db.Load(filepath.Join(dir, "readings.csv"), filepath.Join(dir, "events.csv")); err != nil {
 		t.Fatal(err)
 	}
-	mux := NewMux(db)
+	mux := NewMux(db, nil)
 
 	rec := get(mux, "/meters?status=all&q=M-109&sort=variation")
 	if rec.Code != http.StatusOK {

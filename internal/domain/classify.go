@@ -17,6 +17,7 @@ type Class struct {
 	Type       string
 	Severity   string
 	Confidence float64
+	Excess     float64
 	Signals    []string
 }
 
@@ -48,6 +49,7 @@ func Classify(readings []Reading, events []Event) (Class, bool) {
 			Type:       DataQuality,
 			Severity:   High,
 			Confidence: 1,
+			Excess:     maxAbs(days, level, nil),
 			Signals:    []string{"consumption_near_baseline", "electrical_inconsistency"},
 		}, true
 	}
@@ -92,6 +94,7 @@ func Classify(readings []Reading, events []Event) (Class, bool) {
 			Type:       FalsePositive,
 			Severity:   Low,
 			Confidence: 1,
+			Excess:     maxAbs(days, base, drops),
 			Signals:    []string{"consumption_change", "scheduled_outage"},
 		}, true
 	}
@@ -100,6 +103,7 @@ func Classify(readings []Reading, events []Event) (Class, bool) {
 			Type:       Explainable,
 			Severity:   Medium,
 			Confidence: 1,
+			Excess:     maxAbs(days, base, rises),
 			Signals:    []string{"consumption_increase", "operational_change"},
 		}, true
 	}
@@ -108,10 +112,26 @@ func Classify(readings []Reading, events []Event) (Class, bool) {
 			Type:       RealAnomaly,
 			Severity:   High,
 			Confidence: 1,
+			Excess:     maxAbs(days, base, spikes),
 			Signals:    []string{"consumption_above_baseline", "no_explaining_event", "electrical_change"},
 		}, true
 	}
 	return Class{}, false
+}
+
+func maxAbs(days map[string]float64, base float64, only map[string]struct{}) float64 {
+	var max float64
+	for day, sum := range days {
+		if only != nil {
+			if _, ok := only[day]; !ok {
+				continue
+			}
+		}
+		if rel := abs((sum - base) / base); rel > max {
+			max = rel
+		}
+	}
+	return max
 }
 
 func overlaps(days map[string]struct{}, events []Event, kind string) bool {
@@ -172,6 +192,9 @@ func powerBroken(readings []Reading) bool {
 }
 
 func median(values []float64) float64 {
+	if len(values) == 0 {
+		return 0
+	}
 	cp := append([]float64(nil), values...)
 	sort.Float64s(cp)
 	mid := len(cp) / 2
