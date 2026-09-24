@@ -10,3 +10,7 @@ data/expected_results.csv
 .env
 *.exe
 /server
+*.db
+*.db-journal
+*.db-wal
+*.db-shm

@@ -1,6 +1,6 @@
 # linewatch
 
-API en Go para vigilar medidores y explicar anomalías. Esta fase solo responde el health check.
+API en Go para vigilar medidores y explicar anomalías.
 
 ```bash
 go test ./...
