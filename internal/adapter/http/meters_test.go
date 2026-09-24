@@ -23,7 +23,7 @@ func TestMeterFilterAndMissing(t *testing.T) {
 	}
 	mux := NewMux(db)
 
-	rec := get(mux, "/meters?status=ok&q=M-109&sort=consumption")
+	rec := get(mux, "/meters?status=all&q=M-109&sort=variation")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("filter status %d %s", rec.Code, rec.Body.String())
 	}

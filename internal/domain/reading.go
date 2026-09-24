@@ -10,6 +10,8 @@ var ErrNotFound = errors.New("not found")
 type Meter struct {
 	ID             string  `json:"meter_id"`
 	ConsumptionKWh float64 `json:"consumption_kwh"`
+	BaselineKWh    float64 `json:"baseline_kwh"`
+	Variation      float64 `json:"variation"`
 	Status         string  `json:"status"`
 }
 

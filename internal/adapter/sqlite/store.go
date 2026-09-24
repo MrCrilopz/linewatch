@@ -3,7 +3,6 @@ package sqlite
 import (
 	"database/sql"
 	"encoding/csv"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -111,51 +110,105 @@ func (db *DB) Load(readingsPath, eventsPath string) error {
 }
 
 func (db *DB) Meters() ([]domain.Meter, error) {
-	rows, err := db.sql.Query(`
-		SELECT m.meter_id, COALESCE(SUM(r.consumption_kwh), 0)
-		FROM meters m
-		LEFT JOIN readings r ON r.meter_id = m.meter_id
-		GROUP BY m.meter_id
-		ORDER BY m.meter_id
-	`)
+	rows, err := db.sql.Query(`SELECT meter_id FROM meters ORDER BY meter_id`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	var out []domain.Meter
 	for rows.Next() {
-		var m domain.Meter
-		if err := rows.Scan(&m.ID, &m.ConsumptionKWh); err != nil {
+		var id string
+		if err := rows.Scan(&id); err != nil {
 			return nil, err
 		}
-		m.Status = "ok"
+		m, err := db.Meter(id)
+		if err != nil {
+			return nil, err
+		}
 		out = append(out, m)
 	}
 	return out, rows.Err()
 }
 
 func (db *DB) Meter(id string) (domain.Meter, error) {
-	var m domain.Meter
-	err := db.sql.QueryRow(`
-		SELECT m.meter_id, COALESCE(SUM(r.consumption_kwh), 0)
-		FROM meters m
-		LEFT JOIN readings r ON r.meter_id = m.meter_id
-		WHERE m.meter_id = ?
-		GROUP BY m.meter_id
-	`, id).Scan(&m.ID, &m.ConsumptionKWh)
-	if errors.Is(err, sql.ErrNoRows) {
-		return domain.Meter{}, domain.ErrNotFound
-	}
+	var exists int
+	err := db.sql.QueryRow(`SELECT COUNT(*) FROM meters WHERE meter_id = ?`, id).Scan(&exists)
 	if err != nil {
 		return domain.Meter{}, err
 	}
-	m.Status = "ok"
-	return m, nil
+	if exists == 0 {
+		return domain.Meter{}, domain.ErrNotFound
+	}
+	readings, err := db.consumption(id)
+	if err != nil {
+		return domain.Meter{}, err
+	}
+	events, err := db.events(id)
+	if err != nil {
+		return domain.Meter{}, err
+	}
+	baseline, actual, variation, status := domain.Profile(readings, events)
+	return domain.Meter{
+		ID:             id,
+		ConsumptionKWh: actual,
+		BaselineKWh:    baseline,
+		Variation:      variation,
+		Status:         status,
+	}, nil
+}
+
+func (db *DB) consumption(id string) ([]domain.Reading, error) {
+	rows, err := db.sql.Query(`SELECT timestamp, consumption_kwh FROM readings WHERE meter_id = ? ORDER BY timestamp`, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []domain.Reading
+	for rows.Next() {
+		var raw string
+		var rec domain.Reading
+		if err := rows.Scan(&raw, &rec.ConsumptionKWh); err != nil {
+			return nil, err
+		}
+		rec.Timestamp, err = parseTime(raw)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, rec)
+	}
+	return out, rows.Err()
+}
+
+func (db *DB) events(id string) ([]domain.Event, error) {
+	rows, err := db.sql.Query(`SELECT event_timestamp, event_type, description FROM events WHERE meter_id = ?`, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []domain.Event
+	for rows.Next() {
+		var raw string
+		var ev domain.Event
+		if err := rows.Scan(&raw, &ev.Type, &ev.Description); err != nil {
+			return nil, err
+		}
+		ev.Timestamp, err = parseTime(raw)
+		if err != nil {
+			return nil, err
+		}
+		ev.MeterID = id
+		out = append(out, ev)
+	}
+	return out, rows.Err()
 }
 
 func (db *DB) Readings(id string) ([]domain.Reading, error) {
-	if _, err := db.Meter(id); err != nil {
+	var exists int
+	if err := db.sql.QueryRow(`SELECT COUNT(*) FROM meters WHERE meter_id = ?`, id).Scan(&exists); err != nil {
 		return nil, err
+	}
+	if exists == 0 {
+		return nil, domain.ErrNotFound
 	}
 	rows, err := db.sql.Query(`
 		SELECT timestamp, consumption_kwh, voltage_v, current_a, power_factor, status

@@ -75,15 +75,30 @@ func listMeters(store Store, w http.ResponseWriter, r *http.Request) {
 		}
 		out = append(out, m)
 	}
-	if order == "consumption" {
-		sort.Slice(out, func(i, j int) bool {
-			if out[i].ConsumptionKWh == out[j].ConsumptionKWh {
-				return out[i].ID < out[j].ID
-			}
+	sort.Slice(out, func(i, j int) bool {
+		if order == "variation" && out[i].Variation != out[j].Variation {
+			return out[i].Variation > out[j].Variation
+		}
+		if order == "severity" && statusRank(out[i].Status) != statusRank(out[j].Status) {
+			return statusRank(out[i].Status) > statusRank(out[j].Status)
+		}
+		if order == "consumption" && out[i].ConsumptionKWh != out[j].ConsumptionKWh {
 			return out[i].ConsumptionKWh > out[j].ConsumptionKWh
-		})
-	}
+		}
+		return out[i].ID < out[j].ID
+	})
 	writeJSON(w, http.StatusOK, map[string]any{"meters": out})
+}
+
+func statusRank(status string) int {
+	switch status {
+	case "critical":
+		return 3
+	case "alert":
+		return 2
+	default:
+		return 1
+	}
 }
 
 func meter(store Store, w http.ResponseWriter, r *http.Request) {
