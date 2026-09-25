@@ -23,6 +23,7 @@ export default function App() {
   const [token, setToken] = useState(() => sessionStorage.getItem("linewatch_token") || "");
   const [view, setView] = useState("dashboard");
   const [meterId, setMeterId] = useState("");
+  const [anomalyId, setAnomalyId] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [loginError, setLoginError] = useState(false);
@@ -141,6 +142,9 @@ export default function App() {
           <button type="button" className={view === "meters" ? "on" : ""} onClick={() => { setMeterId(""); setView("meters"); }}>
             {text(lang, "meters")}
           </button>
+          <button type="button" className={view === "anomalies" ? "on" : ""} onClick={() => { setAnomalyId(""); setView("anomalies"); }}>
+            {text(lang, "anomalies")}
+          </button>
         </nav>
         <div className="tools">
           <Language lang={lang} setLang={setLang} />
@@ -158,9 +162,16 @@ export default function App() {
             step={step}
             onRun={runAnalysis}
             result={result}
+            onInvestigate={(id) => { setAnomalyId(id); setView("anomalies"); }}
           />
         ) : (
           <MeterList lang={lang} token={token} onOpen={setMeterId} />
+        )
+      ) : view === "anomalies" ? (
+        anomalyId ? (
+          <AnomalyDetail lang={lang} token={token} anomalyId={anomalyId} onBack={() => setAnomalyId("")} />
+        ) : (
+          <AnomalyList lang={lang} token={token} onOpen={setAnomalyId} />
         )
       ) : (
         <section className="panel">
@@ -250,14 +261,21 @@ function MeterList({ lang, token, onOpen }) {
   );
 }
 
-function MeterDetail({ lang, token, meterId, onBack, running, step, onRun, result }) {
+function MeterDetail({ lang, token, meterId, onBack, running, step, onRun, result, onInvestigate }) {
   const [meter, setMeter] = useState(null);
   const [readings, setReadings] = useState([]);
+  const [caseId, setCaseId] = useState("");
   const locale = lang === "es" ? "es" : "en";
 
   useEffect(() => {
     api(`/meters/${meterId}`, token, lang).then(setMeter).catch(() => setMeter(null));
     api(`/meters/${meterId}/readings`, token, lang).then((body) => setReadings(body.readings || [])).catch(() => setReadings([]));
+    api("/anomalies", token, lang)
+      .then((body) => {
+        const hit = (body.anomalies || []).find((item) => item.meter_id === meterId);
+        setCaseId(hit ? hit.id : "");
+      })
+      .catch(() => setCaseId(""));
   }, [token, lang, meterId]);
 
   const last = readings[readings.length - 1];
@@ -267,6 +285,7 @@ function MeterDetail({ lang, token, meterId, onBack, running, step, onRun, resul
     <section className="panel">
       <button type="button" className="back" onClick={onBack}>{text(lang, "back")}</button>
       <h1>{meterId}</h1>
+      {caseId ? <button type="button" onClick={() => onInvestigate(caseId)}>{text(lang, "investigate")}</button> : null}
       {meter ? (
         <div className="kpis">
           <article><span>{text(lang, "colConsumption")}</span><strong>{kwh(meter.consumption_kwh, locale)}</strong></article>
@@ -301,6 +320,99 @@ function MeterDetail({ lang, token, meterId, onBack, running, step, onRun, resul
         {running ? text(lang, steps[step]) : text(lang, "run")}
       </button>
       {result ? <p className="result">{result}</p> : null}
+    </section>
+  );
+}
+
+function AnomalyList({ lang, token, onOpen }) {
+  const [items, setItems] = useState([]);
+  const [ready, setReady] = useState(false);
+  const locale = lang === "es" ? "es" : "en";
+
+  useEffect(() => {
+    api("/anomalies", token, lang)
+      .then((body) => setItems(body.anomalies || []))
+      .catch(() => setItems([]))
+      .finally(() => setReady(true));
+  }, [token, lang]);
+
+  return (
+    <section className="panel">
+      <h1>{text(lang, "anomalies")}</h1>
+      <table>
+        <thead>
+          <tr>
+            <th>{text(lang, "colMeter")}</th>
+            <th>{text(lang, "colType")}</th>
+            <th>{text(lang, "colSeverity")}</th>
+            <th>{text(lang, "colConfidence")}</th>
+            <th>{text(lang, "colAction")}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.length === 0 ? (
+            <tr><td colSpan="5">{ready ? text(lang, "noAnomalies") : "—"}</td></tr>
+          ) : items.map((item) => (
+            <tr key={item.id} onClick={() => onOpen(item.id)}>
+              <td>{item.meter_id}</td>
+              <td>{text(lang, `type${item.type}`)}</td>
+              <td>{text(lang, `sev${item.severity}`)}</td>
+              <td>{item.confidence.toLocaleString(locale, { style: "percent", maximumFractionDigits: 0 })}</td>
+              <td>{item.recommended_action}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+function AnomalyDetail({ lang, token, anomalyId, onBack }) {
+  const [item, setItem] = useState(null);
+  const locale = lang === "es" ? "es" : "en";
+
+  useEffect(() => {
+    api(`/anomalies/${anomalyId}`, token, lang).then(setItem).catch(() => setItem(null));
+  }, [token, lang, anomalyId]);
+
+  if (!item) {
+    return (
+      <section className="panel">
+        <button type="button" className="back" onClick={onBack}>{text(lang, "back")}</button>
+      </section>
+    );
+  }
+
+  const event = item.event_type
+    ? `${item.event_type}${item.event_description ? ` — ${item.event_description}` : ""}`
+    : text(lang, "noEvent");
+  const signals = (item.signals || []).map((signal) => text(lang, signal));
+
+  return (
+    <section className="panel">
+      <button type="button" className="back" onClick={onBack}>{text(lang, "back")}</button>
+      <h1>{item.meter_id}</h1>
+      <dl className="case">
+        <dt>{text(lang, "found")}</dt>
+        <dd>{item.reason}</dd>
+        <dt>{text(lang, "variables")}</dt>
+        <dd>
+          {signals.join(" · ") || "—"}
+          {item.voltage_v ? ` · ${item.voltage_v.toFixed(1)} V` : ""}
+          {item.current_a ? ` · ${item.current_a.toFixed(1)} A` : ""}
+          {item.power_factor ? ` · ${text(lang, "powerFactor")} ${item.power_factor.toFixed(2)}` : ""}
+        </dd>
+        <dt>{text(lang, "compare")}</dt>
+        <dd>{text(lang, "baseline")} {kwh(item.baseline_kwh, locale)} · {text(lang, "actual")} {kwh(item.actual_kwh, locale)} · {percent(item.variation_pct / 100, locale)}</dd>
+        <dt>{text(lang, "events")}</dt>
+        <dd>{event}</dd>
+        <dt>{text(lang, "sevConf")}</dt>
+        <dd>{text(lang, `sev${item.severity}`)} · {item.confidence.toLocaleString(locale, { style: "percent", maximumFractionDigits: 0 })}</dd>
+        <dt>{text(lang, "action")}</dt>
+        <dd>{item.recommended_action}</dd>
+        <dt>{text(lang, "evidence")}</dt>
+        <dd>{signals.join(" · ")}</dd>
+      </dl>
     </section>
   );
 }

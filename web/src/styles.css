@@ -196,6 +196,16 @@ tbody tr {
   stroke-width: 2;
 }
 
+.case dt {
+  margin-top: 14px;
+  color: #6b6256;
+  font-size: 0.85rem;
+}
+
+.case dd {
+  margin: 4px 0 0;
+}
+
 .chart-key {
   display: flex;
   align-items: center;
