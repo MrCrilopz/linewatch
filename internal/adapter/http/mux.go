@@ -3,6 +3,7 @@ package http
 import (
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"regexp"
 	"sort"
@@ -252,6 +253,12 @@ func meterReadings(store Store, w http.ResponseWriter, r *http.Request) {
 }
 
 func writeError(w http.ResponseWriter, status int, msg string) {
+	if status == http.StatusUnauthorized {
+		log.Printf("auth status=401")
+	}
+	if status >= http.StatusInternalServerError {
+		log.Printf("request status=%d error=%s", status, msg)
+	}
 	writeJSON(w, status, map[string]string{"error": msg})
 }
 

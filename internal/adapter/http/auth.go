@@ -48,6 +48,10 @@ func sign(secret, subject string) (string, error) {
 
 func guard(secret string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("Referrer-Policy", "no-referrer")
+		w.Header().Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
 		if r.URL.Path == "/health" || r.URL.Path == "/login" {
 			next.ServeHTTP(w, r)
 			return
