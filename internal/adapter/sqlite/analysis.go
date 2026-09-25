@@ -131,7 +131,7 @@ func (db *DB) Summary() (domain.Summary, error) {
 	return sum, nil
 }
 
-func (db *DB) Anomalies() ([]domain.AnomalyView, error) {
+func (db *DB) Anomalies(lang string) ([]domain.AnomalyView, error) {
 	row, err := db.latestAnalysis()
 	if errors.Is(err, domain.ErrNotFound) || (err == nil && row.Status != "success") {
 		return []domain.AnomalyView{}, nil
@@ -156,7 +156,7 @@ func (db *DB) Anomalies() ([]domain.AnomalyView, error) {
 		}
 		item.ID = strconv.FormatInt(id, 10)
 		item.Anomaly = true
-		out = append(out, item)
+		out = append(out, db.phrase(item, lang))
 	}
 	if out == nil {
 		out = []domain.AnomalyView{}
@@ -164,7 +164,7 @@ func (db *DB) Anomalies() ([]domain.AnomalyView, error) {
 	return out, rows.Err()
 }
 
-func (db *DB) Anomaly(id string) (domain.AnomalyView, error) {
+func (db *DB) Anomaly(id, lang string) (domain.AnomalyView, error) {
 	n, err := strconv.ParseInt(id, 10, 64)
 	if err != nil || n <= 0 {
 		return domain.AnomalyView{}, domain.ErrNotFound
@@ -202,8 +202,18 @@ func (db *DB) Anomaly(id string) (domain.AnomalyView, error) {
 		item.CurrentA = ev.CurrentA
 		item.PowerFactor = ev.PowerFactor
 		item.Signals = ev.Signals
+		ev.Language = lang
+		item.Reason, item.RecommendedAction = domain.Template(ev)
 	}
 	return item, nil
+}
+
+func (db *DB) phrase(item domain.AnomalyView, lang string) domain.AnomalyView {
+	full, err := db.Anomaly(item.ID, lang)
+	if err != nil {
+		return item
+	}
+	return full
 }
 
 func (db *DB) latestAnalysis() (domain.Analysis, error) {

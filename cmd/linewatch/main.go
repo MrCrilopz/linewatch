@@ -30,9 +30,17 @@ func main() {
 		log.Fatal(err)
 	}
 	log.Printf("loaded meters=%d readings=%d", meters, readings)
-	addr := ":8080"
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8082"
+	}
+	addr := ":" + port
+	secret := os.Getenv("JWT_SECRET")
+	if secret == "" {
+		log.Fatal("JWT_SECRET is required")
+	}
 	log.Printf("listening on %s", addr)
-	log.Fatal(http.ListenAndServe(addr, httpadapter.NewMux(db, app.NewRunner(db, llm.New(os.Getenv("OPENROUTER_API_KEY"))))))
+	log.Fatal(http.ListenAndServe(addr, httpadapter.NewMux(db, app.NewRunner(db, llm.New(os.Getenv("OPENROUTER_API_KEY"))), secret)))
 }
 
 func loadEnv(path string) error {

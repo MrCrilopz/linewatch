@@ -21,7 +21,7 @@ func TestMeterFilterAndMissing(t *testing.T) {
 	if err := db.Load(filepath.Join(dir, "readings.csv"), filepath.Join(dir, "events.csv")); err != nil {
 		t.Fatal(err)
 	}
-	mux := NewMux(db, nil)
+	mux := NewMux(db, nil, "test-secret")
 
 	rec := get(mux, "/meters?status=all&q=M-109&sort=variation")
 	if rec.Code != http.StatusOK {
@@ -73,11 +73,20 @@ func TestMeterFilterAndMissing(t *testing.T) {
 	}
 }
 
-func get(mux *http.ServeMux, path string) *httptest.ResponseRecorder {
+func get(mux http.Handler, path string) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(http.MethodGet, path, nil)
+	req.Header.Set("Authorization", bearer())
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 	return rec
+}
+
+func bearer() string {
+	raw, err := sign("test-secret", demoUser)
+	if err != nil {
+		return ""
+	}
+	return "Bearer " + raw
 }
 
 func repoData(t *testing.T) string {

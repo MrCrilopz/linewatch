@@ -15,6 +15,13 @@ import (
 
 const model = "openrouter/free"
 
+func proseLanguage(lang string) string {
+	if lang == "en" {
+		return "English"
+	}
+	return "Spanish"
+}
+
 type Explainer struct {
 	key    string
 	client *http.Client
@@ -44,7 +51,7 @@ func (e Explainer) complete(ev domain.Evidence) (string, string, bool) {
 	body, err := json.Marshal(map[string]any{
 		"model": model,
 		"messages": []map[string]string{
-			{"role": "system", "content": "Write reason and recommended_action in Spanish. Use only numbers from the data block. Return JSON with those two fields."},
+			{"role": "system", "content": "Write reason and recommended_action in " + proseLanguage(ev.Language) + ". Use only numbers from the data block. Return JSON with those two fields."},
 			{"role": "user", "content": "DATA:\n" + string(packet)},
 		},
 		"max_tokens": 300,

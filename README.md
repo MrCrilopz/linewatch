@@ -7,4 +7,4 @@ go test ./...
 go run ./cmd/linewatch
 ```
 
-`GET http://localhost:8080/health` → `{"status":"ok"}`.
+`GET http://localhost:8082/health` → `{"status":"ok"}`.

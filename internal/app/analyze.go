@@ -34,7 +34,7 @@ func NewRunner(store Catalog, explain Explainer) *Runner {
 	return &Runner{Store: store, Explain: explain, busy: make(chan struct{}, 1)}
 }
 
-func (r *Runner) Start() (domain.Analysis, error) {
+func (r *Runner) Start(lang string) (domain.Analysis, error) {
 	select {
 	case r.busy <- struct{}{}:
 	default:
@@ -46,13 +46,13 @@ func (r *Runner) Start() (domain.Analysis, error) {
 		return domain.Analysis{}, err
 	}
 	log.Printf("analysis id=%s status=running", row.ID)
-	go r.finish(row.ID)
+	go r.finish(row.ID, lang)
 	return row, nil
 }
 
-func (r *Runner) finish(id string) {
+func (r *Runner) finish(id, lang string) {
 	defer func() { <-r.busy }()
-	items, err := r.detect()
+	items, err := r.detect(lang)
 	status := "success"
 	if err != nil {
 		status = "error"
@@ -68,7 +68,7 @@ func (r *Runner) finish(id string) {
 	}
 }
 
-func (r *Runner) detect() ([]domain.Anomaly, error) {
+func (r *Runner) detect(lang string) ([]domain.Anomaly, error) {
 	meters, err := r.Store.Meters()
 	if err != nil {
 		return nil, err
@@ -89,6 +89,7 @@ func (r *Runner) detect() ([]domain.Anomaly, error) {
 		}
 		ev := domain.EvidenceFor(readings, events, class)
 		ev.MeterID = meter.ID
+		ev.Language = lang
 		reason, action := domain.Template(ev)
 		if r.Explain != nil {
 			reason, action = r.Explain.Explain(ev)

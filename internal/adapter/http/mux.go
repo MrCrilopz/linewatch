@@ -19,12 +19,13 @@ type Store interface {
 	Meter(id string) (domain.Meter, error)
 	Readings(id string) ([]domain.Reading, error)
 	Summary() (domain.Summary, error)
-	Anomalies() ([]domain.AnomalyView, error)
-	Anomaly(id string) (domain.AnomalyView, error)
+	Anomalies(lang string) ([]domain.AnomalyView, error)
+	Anomaly(id, lang string) (domain.AnomalyView, error)
 }
 
-func NewMux(store Store, runner *app.Runner) *http.ServeMux {
+func NewMux(store Store, runner *app.Runner, secret string) http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("POST /login", login(secret))
 	mux.HandleFunc("GET /health", health)
 	mux.HandleFunc("POST /ai/analyze", func(w http.ResponseWriter, r *http.Request) {
 		startAnalysis(runner, w, r)
@@ -36,7 +37,7 @@ func NewMux(store Store, runner *app.Runner) *http.ServeMux {
 		dashboard(store, w)
 	})
 	mux.HandleFunc("GET /anomalies", func(w http.ResponseWriter, r *http.Request) {
-		listAnomalies(store, w)
+		listAnomalies(store, w, r)
 	})
 	mux.HandleFunc("GET /anomalies/{id}", func(w http.ResponseWriter, r *http.Request) {
 		anomaly(store, w, r)
@@ -50,15 +51,15 @@ func NewMux(store Store, runner *app.Runner) *http.ServeMux {
 	mux.HandleFunc("GET /meters/{meterId}", func(w http.ResponseWriter, r *http.Request) {
 		meter(store, w, r)
 	})
-	return mux
+	return guard(secret, mux)
 }
 
-func startAnalysis(runner *app.Runner, w http.ResponseWriter, _ *http.Request) {
+func startAnalysis(runner *app.Runner, w http.ResponseWriter, r *http.Request) {
 	if runner == nil {
 		writeError(w, http.StatusInternalServerError, "analysis")
 		return
 	}
-	row, err := runner.Start()
+	row, err := runner.Start(langOf(r))
 	if errors.Is(err, app.ErrBusy) {
 		writeError(w, http.StatusConflict, "analysis running")
 		return
@@ -105,12 +106,12 @@ func dashboard(store Store, w http.ResponseWriter) {
 	writeJSON(w, http.StatusOK, sum)
 }
 
-func listAnomalies(store Store, w http.ResponseWriter) {
+func listAnomalies(store Store, w http.ResponseWriter, r *http.Request) {
 	if store == nil {
 		writeError(w, http.StatusInternalServerError, "store")
 		return
 	}
-	items, err := store.Anomalies()
+	items, err := store.Anomalies(langOf(r))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "store")
 		return
@@ -128,7 +129,7 @@ func anomaly(store Store, w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid anomaly id")
 		return
 	}
-	item, err := store.Anomaly(id)
+	item, err := store.Anomaly(id, langOf(r))
 	if errors.Is(err, domain.ErrNotFound) {
 		writeError(w, http.StatusNotFound, "not found")
 		return
@@ -138,6 +139,13 @@ func anomaly(store Store, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, item)
+}
+
+func langOf(r *http.Request) string {
+	if strings.HasPrefix(strings.ToLower(r.Header.Get("Accept-Language")), "en") {
+		return "en"
+	}
+	return "es"
 }
 
 func health(w http.ResponseWriter, _ *http.Request) {

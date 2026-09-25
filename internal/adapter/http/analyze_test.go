@@ -35,7 +35,7 @@ func TestAnalysisOrderAndStates(t *testing.T) {
 		t.Fatal(err)
 	}
 	held := holdStore{DB: db, hold: make(chan struct{})}
-	mux := NewMux(db, app.NewRunner(held, nil))
+	mux := NewMux(db, app.NewRunner(held, nil), "test-secret")
 
 	before := get(mux, "/dashboard/summary")
 	if before.Code != http.StatusOK {
@@ -142,8 +142,9 @@ func TestAnalysisOrderAndStates(t *testing.T) {
 	}
 }
 
-func postJSON(mux *http.ServeMux, path string) *httptest.ResponseRecorder {
+func postJSON(mux http.Handler, path string) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(http.MethodPost, path, nil)
+	req.Header.Set("Authorization", bearer())
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 	return rec

@@ -64,6 +64,7 @@ type Evidence struct {
 	CurrentA         float64
 	VoltageV         float64
 	PowerFactor      float64
+	Language         string
 	Signals          []string
 }
 
@@ -189,6 +190,22 @@ func medianPF(readings []Reading, day string) float64 {
 }
 
 func Template(ev Evidence) (string, string) {
+	if ev.Language == "en" {
+		switch ev.Type {
+		case RealAnomaly:
+			return fmt.Sprintf("Consumption %.1f%% above the baseline %.1f kWh with no known event. Current %.1f A.", ev.VariationPct, ev.BaselineKWh, ev.CurrentA),
+				"Investigate the meter and the installation."
+		case Explainable:
+			return fmt.Sprintf("Consumption %.1f%% above the baseline %.1f kWh with event %s.", ev.VariationPct, ev.BaselineKWh, ev.EventType),
+				"Validate the operation."
+		case FalsePositive:
+			return fmt.Sprintf("Consumption %.1f%% versus the baseline %.1f kWh during %s.", ev.VariationPct, ev.BaselineKWh, ev.EventType),
+				"Do not escalate."
+		default:
+			return fmt.Sprintf("Consumption %.1f kWh near the baseline %.1f kWh. Voltage %.1f V, current %.1f A and power factor %.2f do not match.", ev.ActualKWh, ev.BaselineKWh, ev.VoltageV, ev.CurrentA, ev.PowerFactor),
+				"Validate the electrical readings."
+		}
+	}
 	switch ev.Type {
 	case RealAnomaly:
 		return fmt.Sprintf("Consumo %.1f%% por encima del baseline %.1f kWh sin evento conocido. Corriente %.1f A.", ev.VariationPct, ev.BaselineKWh, ev.CurrentA),
